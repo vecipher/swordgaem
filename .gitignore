@@ -1,0 +1,62 @@
+# proj ignore rules
+## unity-automatically generated folders, i hope this is the right naming convention
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+MemoryCaptures/
+Recordings/
+ExportedObj/
+Packages/com.unity.collab-proxy/
+## compile and IDE outputs
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.pidb
+*.user
+*.userprefs
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+*.tmp
+*.tmp.meta
+*.CopyComplete
+## IDE specific directorie - i assume we're all using vscode
+.vs/
+## crash shit and diagnostics - should be local and default-not shared
+*.stacktrace
+*.log
+*.dmp
+sysinfo.txt
+## build artifacts since those are heavy
+bin/
+obj/
+*.apk
+*.aab
+*.app
+*.exe
+*.ipa
+*.msi
+## unitypackage
+*.unitypackage
+## OS generated files
+# macOS - oh my sigma
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+# windows :throwing-up:
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+# Linux / common editor backups - not sure what to put here
+# but keep it - minimal, since im going to get a pc later on
+*~
