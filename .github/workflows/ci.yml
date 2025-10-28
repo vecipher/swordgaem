@@ -1,11 +1,11 @@
-name: ci.yml
+name: ci
 
 on:
   push:
   pull_request:
 
 jobs:
-  noop:
+  ci:
     runs-on: ubuntu-latest # technically shit is free, but ubuntu runners are the most common and its good practice
     steps:
       - name: placeholder gargle gargle gargle
