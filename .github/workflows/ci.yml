@@ -1,0 +1,12 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest # technically shit is free, but ubuntu runners are the most common and its good practice
+    steps:
+      - name: placeholder gargle gargle gargle
+        run: echo "ci placeholder, change this when code changes, someone get a linter"
