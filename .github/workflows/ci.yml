@@ -1,4 +1,4 @@
-name: placeholder ci
+name: ci
 
 on:
   push:
