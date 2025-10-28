@@ -1,2 +1,0 @@
-# swordgaem
-game with friends
