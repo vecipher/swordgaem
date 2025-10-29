@@ -1,12 +1,184 @@
-name: ci
+name: ci.yml
 
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
+env:
+  UNITY_VERSION: 6000.2.9f1
+  UNITY_CHANGESET: e0c4e791ab71
 
 jobs:
-  ci:
-    runs-on: ubuntu-latest # technically shit is free, but ubuntu runners are the most common and its good practice
+  playmode-tests:
+    name: PlayMode Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
     steps:
-      - name: placeholder gargle gargle gargle
-        run: echo "ci placeholder, change this when code changes, someone get a linter"
+      - name: Checkout project
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Cache Library
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-${{ runner.os }}-${{ env.UNITY_VERSION }}-${{ hashFiles('Packages/manifest.json') }}
+          restore-keys: |
+            Library-${{ runner.os }}-${{ env.UNITY_VERSION }}-
+            Library-${{ runner.os }}-
+
+      - name: Configure Unity license (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }} # generate .ulf from any machine where you’ve activated Unity Personal (Hub -> Manage License -> “Manual activation” -> save the license file)” and upload the response Unity emails back. Once you have the .ulf, add UNITY_LICENSE to your repo’s secrets with its base64 text; the workflow will then decode it and tests will run on all three OS runners.
+        run: |
+          python3 -c "import base64, os, sys, pathlib; data=os.environ.get('UNITY_LICENSE'); \
+            if not data: sys.stderr.write('UNITY_LICENSE secret is required to run Unity in CI.\n'); sys.exit(1); \
+            target = pathlib.Path.home() / '.local/share/unity3d/Unity/Unity_lic.ulf'; \
+            target.parent.mkdir(parents=True, exist_ok=True); \
+            target.write_bytes(base64.b64decode(data)); \
+            print(f'Wrote Unity license to {target}')"
+          echo "UNITY_LICENSE_FILE=$HOME/.local/share/unity3d/Unity/Unity_lic.ulf" >> "$GITHUB_ENV"
+
+      - name: Configure Unity license (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+        run: |
+          python3 -c "import base64, os, sys, pathlib; data=os.environ.get('UNITY_LICENSE'); \
+            if not data: sys.stderr.write('UNITY_LICENSE secret is required to run Unity in CI.\n'); sys.exit(1); \
+            target = pathlib.Path.home() / 'Library/Application Support/Unity/Unity_lic.ulf'; \
+            target.parent.mkdir(parents=True, exist_ok=True); \
+            target.write_bytes(base64.b64decode(data)); \
+            print(f'Wrote Unity license to {target}')"
+          echo "UNITY_LICENSE_FILE=$HOME/Library/Application Support/Unity/Unity_lic.ulf" >> "$GITHUB_ENV"
+
+      - name: Configure Unity license (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+        run: |
+          if (-not $env:UNITY_LICENSE) {
+            Write-Error "UNITY_LICENSE secret is required to run Unity in CI." -ErrorAction Stop
+          }
+          $licenseDir = Join-Path $env:LOCALAPPDATA 'Unity'
+          New-Item -ItemType Directory -Path $licenseDir -Force | Out-Null
+          $licensePath = Join-Path $licenseDir 'Unity_lic.ulf'
+          [System.IO.File]::WriteAllBytes($licensePath, [System.Convert]::FromBase64String($env:UNITY_LICENSE))
+          Add-Content -Path $env:GITHUB_ENV -Value "UNITY_LICENSE_FILE=$licensePath"
+
+      - name: Install Unity dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk2.0-0 \
+            libgtk-3-0 \
+            libglib2.0-0 \
+            libasound2 \
+            libxcomposite1 \
+            libxcursor1 \
+            libxdamage1 \
+            libxrandr2 \
+            libxfixes3 \
+            libxtst6 \
+            libxi6 \
+            libnss3 \
+            libglu1-mesa \
+            xvfb
+
+      - name: Install Unity editor (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          curl -L "https://download.unity3d.com/download_unity/${UNITY_CHANGESET}/Unity.tar.xz" -o Unity.tar.xz
+          sudo mkdir -p /opt/unity
+          sudo tar -xJf Unity.tar.xz -C /opt/unity
+          sudo chmod +x /opt/unity/Editor/Unity
+          echo "UNITY_EDITOR_PATH=/opt/unity/Editor/Unity" >> "$GITHUB_ENV"
+
+      - name: Install Unity editor (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          curl -L "https://download.unity3d.com/download_unity/${UNITY_CHANGESET}/MacEditorInstaller/Unity.pkg" -o Unity.pkg
+          sudo installer -pkg Unity.pkg -target /
+          UNITY_APP="/Applications/Unity/Unity.app/Contents/MacOS/Unity"
+          if [ ! -f "$UNITY_APP" ]; then
+            echo "::error::Unity editor not found at $UNITY_APP"
+            exit 1
+          fi
+          echo "UNITY_EDITOR_PATH=$UNITY_APP" >> "$GITHUB_ENV"
+
+      - name: Install Unity editor (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:TEMP "UnitySetup-${{ env.UNITY_VERSION }}.exe"
+          Invoke-WebRequest "https://download.unity3d.com/download_unity/${{ env.UNITY_CHANGESET }}/Windows64EditorInstaller/UnitySetup64-${{ env.UNITY_VERSION }}.exe" -OutFile $installer
+          Start-Process -FilePath $installer -ArgumentList "/S","/D=C:\Program Files\Unity" -Wait
+          $unityPath = "C:\Program Files\Unity\Editor\Unity.exe"
+          if (-not (Test-Path $unityPath)) {
+            throw "Unity editor not found at $unityPath"
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "UNITY_EDITOR_PATH=$unityPath"
+
+      - name: Run PlayMode tests (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          xvfb-run --auto-servernum -- \
+            "$UNITY_EDITOR_PATH" \
+            -batchmode \
+            -nographics \
+            -quit \
+            -projectPath "$GITHUB_WORKSPACE" \
+            -runTests \
+            -testPlatform PlayMode \
+            -testResults "$GITHUB_WORKSPACE/TestResults-${{ runner.os }}.xml" \
+            -logFile "$GITHUB_WORKSPACE/Unity-${{ runner.os }}.log"
+
+      - name: Run PlayMode tests (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          "$UNITY_EDITOR_PATH" \
+            -batchmode \
+            -nographics \
+            -quit \
+            -projectPath "$GITHUB_WORKSPACE" \
+            -runTests \
+            -testPlatform PlayMode \
+            -testResults "$GITHUB_WORKSPACE/TestResults-${{ runner.os }}.xml" \
+            -logFile "$GITHUB_WORKSPACE/Unity-${{ runner.os }}.log"
+
+      - name: Run PlayMode tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:UNITY_EDITOR_PATH" `
+            -batchmode `
+            -nographics `
+            -quit `
+            -projectPath "$env:GITHUB_WORKSPACE" `
+            -runTests `
+            -testPlatform PlayMode `
+            -testResults "$env:GITHUB_WORKSPACE\TestResults-${{ runner.os }}.xml" `
+            -logFile "$env:GITHUB_WORKSPACE\Unity-${{ runner.os }}.log"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unity exited with code $LASTEXITCODE"
+          }
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-playmode-${{ runner.os }}
+          path: |
+            TestResults-${{ runner.os }}.xml
+            Unity-${{ runner.os }}.log
